@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Source scans of the printed edition — still in copyright, not redistributed.
+*.pdf
+
+# OS / editor
+Thumbs.db
+.DS_Store
