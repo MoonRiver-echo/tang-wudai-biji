@@ -185,9 +185,11 @@ document.querySelectorAll(".sample").forEach((b) => {
   };
 });
 
+const DB_NAME = document.body.dataset.db || "数据库";
+
 $("writable").addEventListener("change", (e) => {
   setStatus(e.target.checked
-    ? "已开启写入模式，UPDATE / INSERT / DELETE 将直接修改 notes.db，请谨慎操作。"
+    ? "已开启写入模式，UPDATE / INSERT / DELETE 将直接修改 " + DB_NAME + "，请谨慎操作。"
     : "已切回只读模式。", e.target.checked ? "err" : "ok");
 });
 

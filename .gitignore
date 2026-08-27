@@ -7,6 +7,10 @@ venv/
 # Source scans of the printed edition — still in copyright, not redistributed.
 *.pdf
 
+# SQLite WAL sidecar files (transient; the .db itself is committed)
+*.db-shm
+*.db-wal
+
 # OS / editor
 Thumbs.db
 .DS_Store

@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""唐五代笔记小说 —— 浏览器 SQL 查询控制台。
+"""志怪动物分类库 zhiguai.db —— 浏览器 SQL 查询控制台。
 
 启动：
-    python sql_web.py            # 自动打开浏览器
-    python sql_web.py --port 880 --no-browser
+    python zhiguai_web.py            # 自动打开浏览器
+    python zhiguai_web.py --port 8766 --no-browser
 
-默认以只读方式打开 notes.db；勾选界面上的「允许写入」后才能执行
-INSERT/UPDATE/DELETE（用于标注、批量归类等）。
+默认以只读方式打开 zhiguai.db；勾选界面上的「允许写入」后才能执行
+INSERT/UPDATE/DELETE（例如回填 paragraph_animal.role_id）。
 """
 import argparse
 import csv
@@ -19,14 +19,13 @@ from pathlib import Path
 from flask import Flask, Response, jsonify, render_template, request
 
 ROOT = Path(__file__).resolve().parent
-DB_PATH = ROOT / "notes.db"
+DB_PATH = ROOT / "zhiguai.db"
 MAX_ROWS = 2000
 
 app = Flask(__name__)
 
 
 def connect(writable=False):
-    """只读连接用 URI mode=ro，写入连接为普通连接。"""
     if writable:
         conn = sqlite3.connect(DB_PATH)
     else:
@@ -36,7 +35,6 @@ def connect(writable=False):
 
 
 def run_sql(sql, writable=False, max_rows=MAX_ROWS):
-    """执行一条 SQL，返回 (columns, rows, info, error)。"""
     sql = sql.strip().rstrip(";").strip()
     if not sql:
         return [], [], "", "请输入 SQL 语句。"
@@ -69,10 +67,8 @@ def run_sql(sql, writable=False, max_rows=MAX_ROWS):
 
 
 def load_schema():
-    """返回表结构与行数，供侧栏展示。"""
     conn = connect(False)
     out = []
-    # 隐藏 FTS5 的内部影子表（_config/_content/_data/_docsize/_idx）
     tables = conn.execute(
         "SELECT name, type FROM sqlite_master WHERE type IN ('table','view') "
         "AND name NOT LIKE 'sqlite_%' "
@@ -94,61 +90,80 @@ def load_schema():
 
 SAMPLES = [
     ("全库概览",
-     "SELECT b.name AS 书, COUNT(p.id) AS 段数, SUM(p.char_count) AS 总字数\n"
+     "SELECT b.name AS 书, COUNT(p.id) AS 段数\n"
      "FROM books b JOIN paragraphs p ON p.book_id = b.id\n"
      "GROUP BY b.id ORDER BY b.sort_order;"),
-    ("关键词检索（LIKE，任意字数，推荐）",
-     "SELECT b.name AS 书, p.para_no AS 段号, p.category_main AS 类目, p.text AS 正文\n"
-     "FROM paragraphs p\n"
-     "JOIN books b ON b.id = p.book_id\n"
-     "WHERE p.text LIKE '%则天%'\n"
+    ("主动物分布（rank=1）",
+     "SELECT a.name AS 动物, COUNT(*) AS 段数\n"
+     "FROM paragraph_animal pa JOIN animals a ON a.id = pa.animal_id\n"
+     "WHERE pa.rank = 1\n"
+     "GROUP BY a.id ORDER BY 段数 DESC;"),
+    ("某动物的全部段落（含次要提及）",
+     "SELECT b.name AS 书, p.para_no AS 段号, substr(p.text, 1, 60) AS 正文开头\n"
+     "FROM paragraph_animal pa\n"
+     "JOIN animals a   ON a.id = pa.animal_id\n"
+     "JOIN paragraphs p ON p.id = pa.paragraph_id\n"
+     "JOIN books b     ON b.id = p.book_id\n"
+     "WHERE a.name = '龙'\n"
      "ORDER BY b.sort_order, p.para_no\nLIMIT 50;"),
-    ("全文检索（FTS trigram，关键词须≥3字）",
-     "-- 注意：trigram 分词器只能匹配 3 字及以上的词，\n"
-     "-- '则天'、'开元' 这类两字词请改用上面的 LIKE 查询。\n"
-     "SELECT b.name AS 书, p.para_no AS 段号, p.text AS 正文\n"
-     "FROM paragraphs_fts f\n"
-     "JOIN paragraphs p ON p.id = f.para_id\n"
-     "JOIN books b ON b.id = p.book_id\n"
-     "WHERE paragraphs_fts MATCH '贞观中'\nLIMIT 50;"),
-    ("按书筛选正文",
-     "SELECT p.para_no AS 段号, v.name AS 卷篇, p.text AS 正文\n"
-     "FROM paragraphs p\n"
-     "JOIN books b ON b.id = p.book_id\n"
-     "JOIN volumes v ON v.id = p.volume_id\n"
-     "WHERE b.name = '朝野佥载' AND p.text LIKE '%卜%'\nLIMIT 50;"),
-    ("已标注段落",
-     "SELECT b.name AS 书, p.para_no AS 段号, p.category_main AS 主类目,\n"
-     "       p.annotator AS 标注人, p.annotation_note AS 备注, p.text AS 正文\n"
-     "FROM paragraphs p JOIN books b ON b.id = p.book_id\n"
-     "WHERE p.category_main IS NOT NULL\nORDER BY p.updated_at DESC;"),
-    ("各类目段数统计",
-     "SELECT c.name AS 类目, COUNT(a.id) AS 段数\n"
-     "FROM categories c LEFT JOIN annotations a ON a.category_id = c.id\n"
-     "GROUP BY c.id ORDER BY 段数 DESC;"),
-    ("标注批次明细",
-     "SELECT bt.name AS 批次, bt.annotator AS 标注人, bt.para_count AS 段数,\n"
-     "       bt.created_at AS 时间, bt.note AS 备注\n"
-     "FROM batches bt ORDER BY bt.id DESC;"),
-    ("最长的 20 段",
-     "SELECT b.name AS 书, p.para_no AS 段号, p.char_count AS 字数, p.text AS 正文\n"
-     "FROM paragraphs p JOIN books b ON b.id = p.book_id\n"
-     "ORDER BY p.char_count DESC LIMIT 20;"),
-    ("写入示例：批量归类（需勾选允许写入）",
-     "UPDATE paragraphs SET category_main = '卜筮', annotator = 'lx',\n"
-     "       updated_at = datetime('now','localtime')\n"
-     "WHERE book_id = (SELECT id FROM books WHERE name = '朝野佥载')\n"
-     "  AND para_no IN ('01-001','01-003','01-004');"),
+    ("皇帝 × 主动物 交叉",
+     "SELECT e.name AS 皇帝, a.name AS 主动物, COUNT(*) AS 段数\n"
+     "FROM paragraph_reign pr\n"
+     "JOIN emperors e ON e.id = pr.emperor_id AND pr.rank = 1\n"
+     "JOIN paragraph_animal pa ON pa.paragraph_id = pr.paragraph_id AND pa.rank = 1\n"
+     "JOIN animals a ON a.id = pa.animal_id\n"
+     "GROUP BY e.id, a.id\n"
+     "HAVING 段数 >= 2\n"
+     "ORDER BY e.sort_order, 段数 DESC;"),
+    ("年号 + 事类 + 动物 三级检索",
+     "SELECT er.name AS 年号, d.name AS 事类, a.name AS 动物, COUNT(*) AS 段数\n"
+     "FROM paragraph_reign pr\n"
+     "JOIN eras er ON er.id = pr.era_id AND pr.rank = 1\n"
+     "JOIN paragraph_domain pd ON pd.paragraph_id = pr.paragraph_id AND pd.rank = 1\n"
+     "JOIN domains d ON d.id = pd.domain_id\n"
+     "JOIN paragraph_animal pa ON pa.paragraph_id = pr.paragraph_id AND pa.rank = 1\n"
+     "JOIN animals a ON a.id = pa.animal_id\n"
+     "GROUP BY er.name, d.name, a.name\n"
+     "ORDER BY er.sort_order, 段数 DESC\nLIMIT 50;"),
+    ("重建原始 CSV（v_paragraph_csv 视图）",
+     "SELECT source, paragraph_id, level1_supernatural, level2_emperor,\n"
+     "       level2_era, level3_domain, level4_animal, level4_animals_all\n"
+     "FROM v_paragraph_csv\nLIMIT 30;"),
+    ("Markdown 层级切片（v_hierarchy_primary）",
+     "SELECT l1, l2, l3, l4, source, para_no\n"
+     "FROM v_hierarchy_primary\nLIMIT 30;"),
+    ("多动物段落（一段多兽）",
+     "SELECT b.name AS 书, p.para_no AS 段号, COUNT(*) AS 动物数,\n"
+     "       group_concat(a.name, '、') AS 动物\n"
+     "FROM paragraph_animal pa\n"
+     "JOIN animals a   ON a.id = pa.animal_id\n"
+     "JOIN paragraphs p ON p.id = pa.paragraph_id\n"
+     "JOIN books b     ON b.id = p.book_id\n"
+     "GROUP BY p.id HAVING 动物数 >= 4\n"
+     "ORDER BY 动物数 DESC;"),
+    ("动物别名词典",
+     "SELECT a.name AS 正名, aa.alias AS 别名, aa.match_pattern AS 匹配式\n"
+     "FROM animal_aliases aa JOIN animals a ON a.id = aa.animal_id\n"
+     "ORDER BY a.sort_order, aa.alias;"),
+    ("写入示例：标记「凤阁」为名号而非实物（需勾选允许写入）",
+     "UPDATE paragraph_animal SET role_id =\n"
+     "  (SELECT id FROM animal_roles WHERE code = 'title')\n"
+     "WHERE animal_id = (SELECT id FROM animals WHERE name = '凤')\n"
+     "  AND paragraph_id IN (\n"
+     "    SELECT p.id FROM paragraphs p JOIN books b ON b.id = p.book_id\n"
+     "    WHERE b.name = '朝野佥载' AND p.para_no IN ('01-003', '01-007'))\n"
+     "  AND paragraph_id IN (\n"
+     "    SELECT id FROM paragraphs WHERE text LIKE '%凤阁%');"),
 ]
 
 
 @app.route("/")
 def index():
     return render_template("sql_console.html",
-                           title="笔记小说 SQL 控制台",
+                           title="志怪动物分类 SQL 控制台",
                            db_name=DB_PATH.name,
-                           hint="中文检索建议用 LIKE '%词%'（全库仅 4204 段，约 7ms）。"
-                                "paragraphs_fts 用 trigram 分词，只能匹配 3 字及以上的关键词。",
+                           hint="本库为志怪动物分类子集（359 段）。标签用连接表存储："
+                                "rank=1 为主标签；v_paragraph_csv 视图可还原原 CSV。",
                            samples=SAMPLES)
 
 
@@ -180,20 +195,20 @@ def api_export():
     w = csv.writer(buf)
     w.writerow(columns)
     w.writerows(rows)
-    data = "\ufeff" + buf.getvalue()  # BOM，便于 Excel 打开
+    data = "\ufeff" + buf.getvalue()
     return Response(data, mimetype="text/csv; charset=utf-8",
                     headers={"Content-Disposition": "attachment; filename=query_result.csv"})
 
 
 def main():
-    ap = argparse.ArgumentParser(description="笔记小说 SQL 查询控制台")
-    ap.add_argument("--port", type=int, default=8765)
+    ap = argparse.ArgumentParser(description="志怪动物分类 SQL 查询控制台")
+    ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--no-browser", action="store_true")
     args = ap.parse_args()
 
     if not DB_PATH.exists():
-        raise SystemExit(f"找不到数据库 {DB_PATH}，请先运行：python notes_db.py build")
+        raise SystemExit(f"找不到数据库 {DB_PATH}，请先运行：python build_zhiguai_db.py")
 
     url = f"http://{args.host}:{args.port}/"
     if not args.no_browser:
