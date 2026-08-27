@@ -264,3 +264,66 @@ JOIN paragraph_domain pd ON pd.paragraph_id = p.id AND pd.rank = 1
 JOIN domains d ON d.id = pd.domain_id
 JOIN paragraph_animal pa ON pa.paragraph_id = p.id AND pa.rank = 1
 JOIN animals a ON a.id = pa.animal_id;
+
+-- ---------------------------------------------------------------------------
+-- 7. Search view  — every paragraph detail flattened into one row
+--    (tags, aliases, roles, groups) so a single LIKE can hit any facet.
+-- ---------------------------------------------------------------------------
+CREATE VIEW IF NOT EXISTS v_paragraph_full AS
+SELECT
+    p.id          AS pk,
+    b.name        AS source,
+    v.name        AS volume,
+    p.para_no     AS paragraph_id,
+    p.char_count,
+    (SELECT group_concat(x.name, ';')
+       FROM (SELECT st.name
+               FROM paragraph_supernatural ps
+               JOIN supernatural_types st ON st.id = ps.type_id
+              WHERE ps.paragraph_id = p.id
+              ORDER BY ps.rank) x)                    AS l1_all,
+    st1.name                                          AS l1_primary,
+    e.name                                            AS emperor,
+    er.name                                           AS era,
+    (SELECT group_concat(x.name, ';')
+       FROM (SELECT d.name
+               FROM paragraph_domain pd
+               JOIN domains d ON d.id = pd.domain_id
+              WHERE pd.paragraph_id = p.id
+              ORDER BY pd.rank) x)                    AS l3_all,
+    d1.name                                           AS l3_primary,
+    (SELECT group_concat(x.name, ';')
+       FROM (SELECT an.name
+               FROM paragraph_animal pa
+               JOIN animals an ON an.id = pa.animal_id
+              WHERE pa.paragraph_id = p.id
+              ORDER BY pa.rank) x)                    AS animals_all,
+    a1.name                                           AS animal_primary,
+    (SELECT group_concat(DISTINCT x.alias)
+       FROM (SELECT al.alias
+               FROM paragraph_animal pa
+               JOIN animal_aliases al ON al.animal_id = pa.animal_id
+              WHERE pa.paragraph_id = p.id) x)        AS animal_aliases,
+    (SELECT group_concat(DISTINCT x.gname)
+       FROM (SELECT g.name AS gname
+               FROM paragraph_animal pa
+               JOIN animals an ON an.id = pa.animal_id
+               JOIN animal_groups g ON g.id = an.group_id
+              WHERE pa.paragraph_id = p.id) x)        AS animal_groups,
+    p.text                                            AS text
+FROM paragraphs p
+JOIN books b     ON b.id = p.book_id
+JOIN volumes v   ON v.id = p.volume_id
+LEFT JOIN paragraph_supernatural ps1
+       ON ps1.paragraph_id = p.id AND ps1.rank = 1
+LEFT JOIN supernatural_types st1 ON st1.id = ps1.type_id
+LEFT JOIN paragraph_reign pr
+       ON pr.paragraph_id = p.id AND pr.rank = 1
+LEFT JOIN emperors e  ON e.id = pr.emperor_id
+LEFT JOIN eras er     ON er.id = pr.era_id
+LEFT JOIN paragraph_domain pd1
+       ON pd1.paragraph_id = p.id AND pd1.rank = 1
+LEFT JOIN domains d1  ON d1.id = pd1.domain_id
+LEFT JOIN paragraph_animal pa1
+       ON pa1.paragraph_id = p.id AND pa1.rank = 1
+LEFT JOIN animals a1  ON a1.id = pa1.animal_id;

@@ -367,13 +367,23 @@ def rebuild_fts(conn):
     if not tok:
         return None
     conn.execute("DROP TABLE IF EXISTS paragraphs_fts")
+    # Index every searchable detail, not only the body text: book, volume,
+    # paragraph no, all tag levels, animal aliases — one MATCH hits any facet.
     conn.execute(
-        f"CREATE VIRTUAL TABLE paragraphs_fts "
-        f"USING fts5(para_id UNINDEXED, text, tokenize={tok})"
+        f"CREATE VIRTUAL TABLE paragraphs_fts USING fts5("
+        f"para_id UNINDEXED, source, volume, para_no, l1_all, emperor, era, "
+        f"l3_all, animals_all, animal_aliases, text, tokenize={tok})"
     )
-    rows = conn.execute("SELECT id, text FROM paragraphs").fetchall()
+    rows = conn.execute(
+        "SELECT pk, source, volume, paragraph_id, "
+        "COALESCE(l1_all,''), COALESCE(emperor,''), COALESCE(era,''), "
+        "COALESCE(l3_all,''), COALESCE(animals_all,''), "
+        "COALESCE(animal_aliases,''), text FROM v_paragraph_full"
+    ).fetchall()
     conn.executemany(
-        "INSERT INTO paragraphs_fts(para_id, text) VALUES (?,?)", rows
+        "INSERT INTO paragraphs_fts(para_id, source, volume, para_no, l1_all, "
+        "emperor, era, l3_all, animals_all, animal_aliases, text) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows
     )
     return tok
 

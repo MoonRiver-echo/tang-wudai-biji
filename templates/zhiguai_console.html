@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>志怪动物分类 · 检索与模型</title>
+<style>
+:root{
+  --bg:#0c0e13; --panel:#12151d; --panel2:#181c26; --panel3:#1f2431;
+  --line:#262c3a; --line2:#333b4d;
+  --fg:#e8eaf1; --dim:#9aa3b5; --dim2:#6b7386;
+  --accent:#7aa2ff; --accent2:#b58cff; --ok:#5fd6a2; --warn:#ffcf6e; --err:#ff7b72;
+  --rose:#ff9db0;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--fg); overflow:hidden;
+  font:14px/1.65 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+}
+::selection{background:rgba(122,162,255,.3)}
+.app{display:flex; flex-direction:column; height:100vh}
+
+/* ── 顶栏 ── */
+.topbar{
+  display:flex; align-items:center; gap:22px; padding:0 22px;
+  height:56px; flex:none; background:var(--panel);
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex; align-items:baseline; gap:10px; white-space:nowrap}
+.brand h1{
+  margin:0; font-size:16px; font-weight:700; letter-spacing:1px;
+}
+.brand small{color:var(--dim2); font-size:11.5px; font-family:Consolas,monospace}
+.tabs{display:flex; gap:4px; height:100%}
+.tab{
+  display:flex; align-items:center; padding:0 18px; cursor:pointer;
+  color:var(--dim); font-size:13.5px; border-bottom:2px solid transparent;
+  user-select:none; transition:color .15s;
+}
+.tab:hover{color:var(--fg)}
+.tab.active{color:var(--accent); border-bottom-color:var(--accent); font-weight:600}
+.top-right{margin-left:auto; display:flex; align-items:center; gap:14px}
+.dbswitch{
+  color:var(--dim2); font-size:12px; text-decoration:none;
+  border:1px solid var(--line); padding:4px 10px; border-radius:6px;
+}
+.dbswitch:hover{color:var(--accent); border-color:var(--accent)}
+
+/* ── 页签容器 ── */
+.page{display:none; flex:1; min-height:0}
+.page.active{display:flex}
+
+/* ═══ 检索页 ═══ */
+#page-search{flex-direction:column; overflow:hidden}
+.search-hero{
+  padding:26px 28px 18px; background:var(--panel);
+  border-bottom:1px solid var(--line); flex:none;
+}
+.search-box{display:flex; gap:10px; max-width:1100px; margin:0 auto}
+.search-box input{
+  flex:1; background:var(--panel2); border:1px solid var(--line2);
+  border-radius:10px; padding:12px 18px; color:var(--fg); font-size:15.5px;
+  outline:0; transition:border-color .15s, box-shadow .15s;
+}
+.search-box input:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(122,162,255,.14);
+}
+.search-box button{
+  background:var(--accent); color:#0d1117; border:0; border-radius:10px;
+  padding:0 26px; font-weight:700; font-size:14.5px; cursor:pointer;
+}
+.search-box button:hover{filter:brightness(1.12)}
+.facet-row{
+  display:flex; gap:8px; flex-wrap:wrap; justify-content:center;
+  max-width:1100px; margin:14px auto 0;
+}
+.facet{position:relative}
+.facet select{
+  appearance:none; background:var(--panel2); color:var(--dim);
+  border:1px solid var(--line); border-radius:999px;
+  padding:5px 26px 5px 13px; font-size:12.5px; cursor:pointer; outline:0;
+  max-width:170px;
+}
+.facet select:hover{border-color:var(--line2); color:var(--fg)}
+.facet select.on{color:var(--accent); border-color:var(--accent); font-weight:600}
+.facet::after{
+  content:"▾"; position:absolute; right:11px; top:50%;
+  transform:translateY(-50%); color:var(--dim2); font-size:10px;
+  pointer-events:none;
+}
+.facet-clear{
+  background:transparent; border:1px dashed var(--line2); color:var(--dim2);
+  border-radius:999px; padding:5px 13px; font-size:12.5px; cursor:pointer;
+}
+.facet-clear:hover{color:var(--err); border-color:var(--err)}
+.result-meta{
+  flex:none; padding:10px 28px; color:var(--dim); font-size:12.5px;
+  border-bottom:1px solid var(--line); display:flex; gap:14px; align-items:center;
+}
+.result-meta b{color:var(--accent); font-size:14px}
+.result-scroll{flex:1; overflow:auto; padding:18px 28px 40px}
+.cards{max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:14px}
+.card{
+  background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:16px 20px; transition:border-color .15s;
+}
+.card:hover{border-color:var(--line2)}
+.card-head{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+.card-title{font-weight:700; font-size:15px}
+.card-title .book{color:var(--accent)}
+.card-title .pid{color:var(--dim); font-family:Consolas,monospace; font-size:12.5px}
+.card-vol{color:var(--dim2); font-size:12px}
+.card-len{margin-left:auto; color:var(--dim2); font-size:11.5px}
+.tagrow{display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 4px}
+.tag{
+  font-size:11.5px; padding:2.5px 9px; border-radius:999px;
+  border:1px solid var(--line2); color:var(--dim); white-space:nowrap;
+}
+.tag.l1{color:var(--accent); border-color:rgba(122,162,255,.4); background:rgba(122,162,255,.08)}
+.tag.reign{color:var(--ok); border-color:rgba(95,214,162,.4); background:rgba(95,214,162,.07)}
+.tag.l3{color:var(--accent2); border-color:rgba(181,140,255,.4); background:rgba(181,140,255,.08)}
+.tag.animal{color:var(--warn); border-color:rgba(255,207,110,.4); background:rgba(255,207,110,.07)}
+.tag.group{color:var(--rose); border-color:rgba(255,157,176,.35); background:rgba(255,157,176,.06)}
+.tag.pri{font-weight:700}
+.card-text{
+  margin-top:10px; color:var(--fg); font-size:13.5px; line-height:1.8;
+  max-height:6.4em; overflow:hidden; position:relative; cursor:pointer;
+}
+.card-text.expanded{max-height:none}
+.card-text:not(.expanded)::after{
+  content:""; position:absolute; left:0; right:0; bottom:0; height:2.2em;
+  background:linear-gradient(transparent, var(--panel));
+}
+.card-text mark{background:rgba(255,207,110,.3); color:inherit; border-radius:2px; padding:0 1px}
+.empty{padding:60px; text-align:center; color:var(--dim2)}
+
+/* ═══ SQL 页 ═══ */
+#page-sql{min-height:0}
+.sql-side{
+  width:280px; flex:none; background:var(--panel);
+  border-right:1px solid var(--line); display:flex; flex-direction:column;
+}
+.side-scroll{overflow:auto; padding:10px 12px 20px; flex:1}
+.sql-side h2{
+  font-size:11px; text-transform:uppercase; letter-spacing:1px;
+  color:var(--dim2); margin:16px 0 8px; font-weight:600;
+}
+.tbl{margin-bottom:6px}
+.tbl-head{
+  display:flex; justify-content:space-between; align-items:center; gap:8px;
+  padding:6px 8px; border-radius:6px; cursor:pointer; user-select:none;
+}
+.tbl-head:hover{background:var(--panel2)}
+.tbl-name{font-weight:600; color:var(--accent); font-size:12.5px}
+.tbl-name.view{color:var(--accent2)}
+.tbl-rows{color:var(--dim2); font-size:11.5px}
+.cols{display:none; padding:2px 0 6px 12px; border-left:2px solid var(--line); margin-left:8px}
+.cols.open{display:block}
+.col{
+  display:flex; justify-content:space-between; gap:8px; padding:2px 6px;
+  border-radius:4px; cursor:pointer; font-size:12px;
+}
+.col:hover{background:var(--panel2)}
+.col .t{color:var(--dim2); font-size:11px}
+.col .pk{color:var(--ok)}
+.sample{
+  display:block; width:100%; text-align:left; background:var(--panel2);
+  color:var(--fg); border:1px solid var(--line); border-radius:8px;
+  padding:7px 10px; margin-bottom:6px; cursor:pointer; font-size:12.5px;
+}
+.sample:hover{border-color:var(--accent); color:var(--accent)}
+.sql-main{flex:1; display:flex; flex-direction:column; min-width:0}
+.editor-wrap{border-bottom:1px solid var(--line); background:var(--panel)}
+textarea{
+  width:100%; height:170px; resize:vertical; border:0; outline:0;
+  background:var(--panel); color:var(--fg); padding:14px 16px;
+  font:13.5px/1.7 "Cascadia Code",Consolas,"Courier New",monospace;
+  tab-size:2;
+}
+.bar{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:9px 14px; background:var(--panel2); border-top:1px solid var(--line);
+}
+.bar button{
+  background:var(--accent); color:#0d1117; border:0; border-radius:6px;
+  padding:7px 15px; font-weight:600; cursor:pointer; font-size:13px;
+}
+.bar button:hover{filter:brightness(1.12)}
+.bar button:disabled{opacity:.5; cursor:default}
+.bar button.ghost{background:transparent; color:var(--fg); border:1px solid var(--line); font-weight:500}
+.bar button.ghost:hover{border-color:var(--accent); color:var(--accent); filter:none}
+label.chk{display:flex; align-items:center; gap:6px; cursor:pointer; color:var(--dim); font-size:12.5px}
+label.chk input{accent-color:var(--err); cursor:pointer}
+.hint{color:var(--dim2); font-size:12px; margin-left:auto}
+.status{padding:8px 14px; font-size:12.5px; min-height:34px; border-bottom:1px solid var(--line)}
+.status.ok{color:var(--ok)}
+.status.err{color:var(--err); white-space:pre-wrap; font-family:Consolas,monospace}
+.result{flex:1; overflow:auto; position:relative}
+table{border-collapse:collapse; width:max-content; min-width:100%; font-size:13px}
+th,td{
+  border:1px solid var(--line); padding:6px 10px; text-align:left;
+  vertical-align:top; max-width:620px;
+}
+th{
+  background:var(--panel2); position:sticky; top:0; z-index:2;
+  font-weight:600; white-space:nowrap; color:var(--accent);
+}
+td{white-space:pre-wrap; word-break:break-word}
+tbody tr:nth-child(even){background:rgba(255,255,255,.022)}
+tbody tr:hover{background:rgba(122,162,255,.08)}
+td.num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap}
+td.null{color:var(--dim2); font-style:italic}
+.rowno{color:var(--dim2); text-align:right; font-size:11.5px; white-space:nowrap}
+
+/* ═══ 模型页 ═══ */
+#page-model{overflow:auto; display:none}
+#page-model.active{display:block}
+.model-wrap{max-width:1180px; margin:0 auto; padding:28px 28px 60px}
+.model-wrap h2{
+  font-size:19px; margin:38px 0 6px; font-weight:700; letter-spacing:.5px;
+}
+.model-wrap h2:first-child{margin-top:0}
+.model-sub{color:var(--dim); font-size:13px; margin:0 0 16px}
+.stat-grid{display:flex; gap:14px; flex-wrap:wrap; margin-top:18px}
+.stat{
+  background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:16px 22px; min-width:150px;
+}
+.stat .v{font-size:26px; font-weight:700; color:var(--accent)}
+.stat .v.warn{color:var(--warn)}
+.stat .l{color:var(--dim); font-size:12.5px; margin-top:2px}
+.panel{
+  background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:20px 22px; margin-top:14px;
+}
+.panel h3{margin:0 0 12px; font-size:13.5px; color:var(--dim); font-weight:600}
+.two-col{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+@media (max-width:1000px){.two-col{grid-template-columns:1fr}}
+.bars{display:flex; flex-direction:column; gap:7px}
+.bar-row{display:flex; align-items:center; gap:10px; font-size:12.5px}
+.bar-row .bl{width:110px; text-align:right; color:var(--dim); flex:none;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.bar-row .track{flex:1; background:var(--panel3); border-radius:4px; height:16px; overflow:hidden}
+.bar-row .fill{height:100%; background:var(--accent); border-radius:4px; min-width:2px}
+.bar-row .fill.a2{background:var(--accent2)}
+.bar-row .fill.ok{background:var(--ok)}
+.bar-row .fill.warn{background:var(--warn)}
+.bar-row .fill.rose{background:var(--rose)}
+.bar-row .bv{width:38px; color:var(--fg); font-variant-numeric:tabular-nums; flex:none}
+.mapping{width:100%; font-size:12.8px}
+.mapping th{background:var(--panel3)}
+.mapping td{max-width:340px}
+.note-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+@media (max-width:1000px){.note-grid{grid-template-columns:1fr}}
+.note{
+  background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:16px 20px;
+}
+.note h4{margin:0 0 8px; font-size:14px; color:var(--accent)}
+.note p{margin:0; color:var(--dim); font-size:12.8px; line-height:1.7}
+.callout{
+  border-left:3px solid var(--accent); background:var(--panel);
+  border-radius:0 10px 10px 0; padding:14px 18px; margin-top:14px;
+  color:var(--dim); font-size:13px; line-height:1.75;
+}
+.callout b{color:var(--fg)}
+code{
+  font-family:Consolas,monospace; font-size:.92em; color:var(--accent);
+  background:var(--panel3); border-radius:4px; padding:1px 5px;
+}
+.er-svg text{font-family:"Segoe UI","Microsoft YaHei",sans-serif}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <h1>志怪动物分类</h1>
+      <small>{{ db_name }}</small>
+    </div>
+    <nav class="tabs">
+      <div class="tab active" data-page="search">段落检索</div>
+      <div class="tab" data-page="sql">SQL 控制台</div>
+      <div class="tab" data-page="model">数据模型</div>
+    </nav>
+    <div class="top-right">
+      <a class="dbswitch" href="http://127.0.0.1:8765/" target="_blank">全文库 notes.db ↗</a>
+    </div>
+  </div>
+
+  <!-- ════════════ 检索 ════════════ -->
+  <section class="page active" id="page-search">
+    <div class="search-hero">
+      <div class="search-box">
+        <input id="q" placeholder="检索段落的任何细节：正文、书名、卷名、段号、志怪类别、皇帝、年号、事类、动物及别名（如 凤凰 / 景龙 / 01-022）…" autofocus>
+        <button id="go">检索</button>
+      </div>
+      <div class="facet-row" id="facets"></div>
+    </div>
+    <div class="result-meta" id="meta">输入关键词或选择过滤器；空关键词列出全部段落。</div>
+    <div class="result-scroll"><div class="cards" id="cards">
+      <div class="empty">——</div>
+    </div></div>
+  </section>
+
+  <!-- ════════════ SQL ════════════ -->
+  <section class="page" id="page-sql">
+    <aside class="sql-side">
+      <div class="side-scroll">
+        <h2>示例查询</h2>
+        <div id="samples">
+          {% for title, sql in samples %}
+          <button class="sample" data-sql="{{ sql|e }}">{{ title }}</button>
+          {% endfor %}
+        </div>
+        <h2>数据表 / 视图</h2>
+        <div id="schema"><div style="color:var(--dim2)">加载中…</div></div>
+      </div>
+    </aside>
+    <main class="sql-main">
+      <div class="editor-wrap">
+        <textarea id="sql" spellcheck="false" placeholder="在此输入 SQL，Ctrl+Enter 执行…"></textarea>
+        <div class="bar">
+          <button id="run">执行 (Ctrl+Enter)</button>
+          <button id="export" class="ghost">导出 CSV</button>
+          <button id="clear" class="ghost">清空</button>
+          <label class="chk"><input type="checkbox" id="writable">允许写入</label>
+          <span class="hint">短关键词检索请用「段落检索」页；FTS 需 ≥3 字</span>
+        </div>
+      </div>
+      <div class="status" id="status">就绪。默认只读连接，最多返回 2000 行。</div>
+      <div class="result" id="result">
+        <div class="empty">执行查询后，结果会显示在这里。</div>
+      </div>
+    </main>
+  </section>
+
+  <!-- ════════════ 模型 ════════════ -->
+  <section class="page" id="page-model">
+    <div class="model-wrap">
+      <h2>志怪动物分类 · 关系模型</h2>
+      <p class="model-sub">
+        CSV / JSON / Markdown 是同一批段落的三种序列化。分号字段为多值标签，
+        Markdown 树每层只取主标签。数据库保存全部标签，rank=1 即主标签，
+        并预留通用词表以容纳后续维度。
+      </p>
+      <div class="stat-grid" id="stat-grid"></div>
+
+      <div class="callout">
+        <b>是“分面记录”，不是“层级树”。</b>
+        志怪类别、皇帝·年号、事类、动物是四个独立维度；Markdown 的
+        L1→L2→L3→L4 只是一种浏览顺序。若把这棵树存成父子类目表，
+        「任意朝代下的所有龙」这类查询就需要递归遍历，新增维度（地点、人物）
+        也得改表结构。连接表 + rank 让两个方向都保持简单。
+      </div>
+
+      <h2>实体关系图</h2>
+      <div class="panel"><div id="er"></div></div>
+
+      <h2>字段映射：CSV 列 → 关系表</h2>
+      <div class="panel" style="padding:0; overflow:auto">
+        <table class="mapping">
+          <thead><tr><th>CSV / JSON 字段</th><th>源数据基数</th><th>关系映射</th></tr></thead>
+          <tbody>
+            <tr><td><code>source</code></td><td>17 个</td><td><code>books.name</code></td></tr>
+            <tr><td><code>volume</code></td><td>84 个；卷名未必含书名（如 01-敬元颖）</td><td><code>volumes(book_id, name)</code></td></tr>
+            <tr><td><code>paragraph_id</code></td><td>265 个；跨书重复 94 次，仅 (书, 段号) 唯一</td><td><code>paragraphs.para_no</code> + <code>UNIQUE(book_id, para_no)</code></td></tr>
+            <tr><td><code>text</code></td><td>359 条全唯一；23–15943 字，均值 304</td><td><code>paragraphs.text</code> + FTS5</td></tr>
+            <tr><td><code>level1_supernatural</code></td><td>9 个标签；98 段多标签（最多 5）；拆分后 488 条</td><td><code>paragraph_supernatural.rank</code> → <code>supernatural_types</code></td></tr>
+            <tr><td><code>level2_emperor</code></td><td>16 个值；210 段为「未系年」(58%)</td><td><code>paragraph_reign.emperor_id</code>；未系年为占位皇帝</td></tr>
+            <tr><td><code>level2_era</code></td><td>29 个；265 段为空；必随皇帝出现</td><td><code>paragraph_reign.era_id</code> → <code>eras</code>（唐年号.xls 预载 76 行）</td></tr>
+            <tr><td><code>level3_domain</code></td><td>11 个标签；160 段多标签（最多 7）；拆分后 620 条</td><td><code>paragraph_domain.rank</code> → <code>domains</code>；未明为占位</td></tr>
+            <tr><td><code>level4_animal</code></td><td>36 个主名；恒等于 level4_animals_all 首项</td><td><code>paragraph_animal WHERE rank = 1</code></td></tr>
+            <tr><td><code>level4_animals_all</code></td><td>46 个；127 段多动物（最多 18）；拆分后 610 条</td><td><code>paragraph_animal</code>（全部 rank）→ <code>animals</code> + <code>animal_aliases</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>源数据分布</h2>
+      <div class="two-col">
+        <div class="panel"><h3>各书段数</h3><div class="bars" id="chart-books"></div></div>
+        <div class="panel"><h3>主动物分布（rank=1，前 12）</h3><div class="bars" id="chart-animals"></div></div>
+        <div class="panel"><h3>主志怪类别（L1 rank=1）</h3><div class="bars" id="chart-l1"></div></div>
+        <div class="panel"><h3>年号段数（前 10）· 其余 265 段无年号</h3><div class="bars" id="chart-eras"></div></div>
+        <div class="panel"><h3>动物部类（全部提及）</h3><div class="bars" id="chart-groups"></div></div>
+        <div class="panel"><h3>单段动物数</h3><div class="bars" id="chart-multi"></div></div>
+      </div>
+
+      <h2>扩展设计</h2>
+      <div class="note-grid">
+        <div class="note">
+          <h4>L1–L4 保持类型化</h4>
+          <p>「开元年间 神仙佛道 类中的龙」需要真实外键，而不是通用标签包。
+          四个连接表保留；未来的新维度（地点、人物、母题）走
+          vocabularies / terms / paragraph_terms 通用词表。</p>
+        </div>
+        <div class="note">
+          <h4>用 rank，不加 is_primary 列</h4>
+          <p>CSV 的顺序本身有意义：首项即 Markdown 树采用的主标签。
+          rank=1 为主，UNIQUE(paragraph_id, rank) 保序，无需冗余布尔列。</p>
+        </div>
+        <div class="note">
+          <h4>与 notes.db 的连接键</h4>
+          <p>notes.db 已存全部 4204 段原文。本库是动物志怪子集，
+          用 books.name + paragraphs.para_no 即可关联，
+          不复制全文库。</p>
+        </div>
+        <div class="note">
+          <h4>动物角色留待回填</h4>
+          <p>检测命中里有官署名（凤阁）、官名（司马）、人名（马知己）。
+          paragraph_animal.role_id 目前统一为「未辨析」，后续可标
+          实物 / 征兆 / 隐喻 / 官署名 / 人名，表结构不变。</p>
+        </div>
+      </div>
+
+      <div class="callout" style="margin-top:26px">
+        <b>重建：</b><code>python build_zhiguai_db.py</code>
+        依据 <code>zhiguai_schema.sql</code> 与
+        <code>志怪动物分类-汇总.csv</code> 重建 zhiguai.db，
+        词表与唐年号自动预载；重跑会替换整个文件。
+        检索视图 <code>v_paragraph_full</code> 将每段的全部细节摊平为一行。
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+window.STATS = {{ stats|tojson }};
+</script>
+<script src="/static/zhiguai_console.js"></script>
+</body>
+</html>
