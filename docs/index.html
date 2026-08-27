@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="唐五代志怪动物分类 SQLite 数据库在线检索">
+  <title>志怪动物数据库</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0d12;
+      --panel: #141821;
+      --panel-2: #1b202c;
+      --line: #2b3344;
+      --text: #edf0f7;
+      --muted: #98a2b7;
+      --accent: #84a9ff;
+      --accent-2: #b995ff;
+      --ok: #65d6a6;
+      --warn: #ffd477;
+      --error: #ff8580;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.65 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    }
+    button, input, select, textarea { font: inherit; }
+    button, .download {
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #0b1020;
+      padding: 9px 16px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    button:disabled { cursor: wait; opacity: .55; }
+    .ghost {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      min-height: 62px;
+      padding: 10px max(18px, calc((100vw - 1180px) / 2));
+      background: rgba(20, 24, 33, .96);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+    }
+    h1 { margin: 0; font-size: 18px; letter-spacing: .08em; }
+    .status { color: var(--muted); font-size: 12px; }
+    .status.ok { color: var(--ok); }
+    .status.error { color: var(--error); }
+    .header-actions { margin-left: auto; display: flex; gap: 8px; }
+    nav {
+      display: flex;
+      gap: 5px;
+      padding: 18px max(18px, calc((100vw - 1180px) / 2)) 0;
+    }
+    nav button { background: var(--panel); color: var(--muted); }
+    nav button.active { color: var(--accent); outline: 1px solid var(--accent); }
+    main { max-width: 1180px; margin: 0 auto; padding: 18px 18px 60px; }
+    .page { display: none; }
+    .page.active { display: block; }
+    .search-row { display: flex; gap: 9px; }
+    .search-row input, select, textarea {
+      color: var(--text);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      outline: 0;
+    }
+    .search-row input {
+      flex: 1;
+      min-width: 0;
+      padding: 11px 15px;
+      font-size: 15px;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    .facets { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+    select { padding: 6px 10px; max-width: 180px; }
+    .meta { color: var(--muted); margin: 14px 0; }
+    .meta b { color: var(--accent); }
+    .cards { display: grid; gap: 12px; }
+    .card {
+      padding: 16px 18px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+    .card-head { display: flex; gap: 9px; align-items: baseline; flex-wrap: wrap; }
+    .book { color: var(--accent); font-weight: 700; }
+    .para, .volume, .length { color: var(--muted); }
+    .length { margin-left: auto; font-size: 12px; }
+    .tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 9px 0; }
+    .tag {
+      padding: 2px 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--accent-2);
+      font-size: 12px;
+    }
+    .tag.animal { color: var(--warn); }
+    .text { white-space: pre-wrap; max-height: 8em; overflow: hidden; cursor: pointer; }
+    .text.expanded { max-height: none; }
+    mark { background: rgba(255, 212, 119, .28); color: inherit; }
+    textarea {
+      width: 100%;
+      min-height: 160px;
+      padding: 13px;
+      resize: vertical;
+      font-family: "Cascadia Code", Consolas, monospace;
+    }
+    .sql-actions { display: flex; gap: 8px; margin: 10px 0; align-items: center; }
+    .sql-status { color: var(--muted); margin-left: auto; }
+    .table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+    table { border-collapse: collapse; width: max-content; min-width: 100%; }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 7px 10px;
+      text-align: left;
+      vertical-align: top;
+      max-width: 520px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    th { position: sticky; top: 0; background: var(--panel-2); color: var(--accent); }
+    .about {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 18px 22px;
+    }
+    code { color: var(--accent); }
+    .empty { color: var(--muted); text-align: center; padding: 42px 16px; }
+    @media (max-width: 650px) {
+      header { align-items: flex-start; flex-wrap: wrap; }
+      .header-actions { width: 100%; margin-left: 0; }
+      .search-row { flex-direction: column; }
+      .length { width: 100%; margin-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>志怪动物数据库</h1>
+      <div id="db-status" class="status">正在下载并打开 zhiguai.db…</div>
+    </div>
+    <div class="header-actions">
+      <a class="download ghost" href="./zhiguai.db" download>下载数据库</a>
+      <a class="download ghost" href="https://github.com/MoonRiver-echo/tang-wudai-biji" target="_blank" rel="noreferrer">GitHub</a>
+    </div>
+  </header>
+
+  <nav aria-label="页面">
+    <button class="tab active" data-page="search">段落检索</button>
+    <button class="tab" data-page="sql">只读 SQL</button>
+    <button class="tab" data-page="about">说明</button>
+  </nav>
+
+  <main>
+    <section id="page-search" class="page active">
+      <div class="search-row">
+        <input id="query" type="search" placeholder="检索正文、书名、卷名、段号、类别、年号或动物…" disabled>
+        <button id="search-button" disabled>检索</button>
+      </div>
+      <div id="facets" class="facets"></div>
+      <div id="search-meta" class="meta">数据库加载后即可检索。</div>
+      <div id="cards" class="cards"></div>
+    </section>
+
+    <section id="page-sql" class="page">
+      <textarea id="sql" spellcheck="false" disabled>SELECT * FROM v_paragraph_full LIMIT 10;</textarea>
+      <div class="sql-actions">
+        <button id="run-sql" disabled>执行</button>
+        <button id="export-csv" class="ghost" disabled>导出 CSV</button>
+        <span id="sql-status" class="sql-status">数据库加载中</span>
+      </div>
+      <div id="sql-result" class="table-wrap">
+        <div class="empty">执行查询后，结果会显示在这里。</div>
+      </div>
+    </section>
+
+    <section id="page-about" class="page">
+      <div class="about">
+        <h2>关于数据</h2>
+        <p>本页面直接在浏览器内打开 SQLite 文件，不会把查询内容发送到服务器。数据库包含唐五代笔记小说中的志怪动物分类、原文、书目、年号和分面标签。</p>
+        <p>在线数据库为只读副本。需要本地分析时，可下载 <code>zhiguai.db</code>，使用 SQLite、Python、R 或其他数据库工具打开。</p>
+        <p id="db-summary">正在读取数据库统计信息…</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/sql-wasm.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
